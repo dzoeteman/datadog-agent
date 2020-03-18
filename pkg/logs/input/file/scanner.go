@@ -173,6 +173,7 @@ func (s *Scanner) removeSource(source *config.LogSource) {
 // launch launches new tailers for a new source.
 func (s *Scanner) launchTailers(source *config.LogSource) {
 	files, err := s.fileProvider.CollectFiles(source)
+	wildcard := s.fileProvider.containsWildcard(source.Config.Path)
 	if err != nil {
 		source.Status.Error(err)
 		log.Warnf("Could not collect files: %v", err)
@@ -191,11 +192,15 @@ func (s *Scanner) launchTailers(source *config.LogSource) {
 			log.Infof("Invalid or no tailing mode provided, tailing from the end of the file %v", file.Path)
 			source.Config.TailingMode = mode.String()
 		}
+		if wildcard && (mode == Beginning || mode == ForceBeginning) {
+			log.Warnf("Tailing from the beginning is not supported for wildcard path %v, tailing from the end", file.Path)
+			source.Config.TailingMode, mode = TailingMode(End).String(), End
+		}
+
 		if source.Config.Identifier != "" {
 			// only sources generated from a service discovery will contain a config identifier,
 			// in which case we want to collect all logs.
 			// FIXME: better detect a source that has been generated from a service discovery.
-			//tailFromBeginning = true
 			mode = Beginning
 		}
 		s.startNewTailer(file, mode)

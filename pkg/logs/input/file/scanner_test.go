@@ -240,6 +240,57 @@ func TestScannerScanStartNewTailer(t *testing.T) {
 	assert.Equal(t, "world", string(msg.Content))
 }
 
+func TestScannerWithWildcardAndTailFromTheBeginning(t *testing.T) {
+	var err error
+	var path string
+	var file *os.File
+	var tailer *Tailer
+	var msg *message.Message
+
+	testDir, err := ioutil.TempDir("", "log-scanner-test-")
+	assert.Nil(t, err)
+
+	// create scanner
+	path = fmt.Sprintf("%s/*.log", testDir)
+	openFilesLimit := 2
+	sleepDuration := 20 * time.Millisecond
+	scanner := NewScanner(config.NewLogSources(), openFilesLimit, mock.NewMockProvider(), auditor.NewRegistry(), sleepDuration)
+	source := config.NewLogSource("", &config.LogsConfig{Type: config.FileType, Path: path, TailingMode: "beginning"})
+	// scanner.activeSources = append(scanner.activeSources, source)
+	status.Clear()
+	status.InitStatus(config.CreateSources([]*config.LogSource{source}))
+	defer status.Clear()
+
+	// create file
+	path = fmt.Sprintf("%s/test.log", testDir)
+	file, err = os.Create(path)
+	assert.Nil(t, err)
+
+	// add content
+	_, err = file.WriteString("Once\n")
+	assert.Nil(t, err)
+	_, err = file.WriteString("Upon\n")
+	assert.Nil(t, err)
+
+	// test scan from beginning but it shall start from the end as the path is a wildcard
+	scanner.addSource(source)
+	assert.Equal(t, 1, len(scanner.tailers))
+
+	// add content
+	_, err = file.WriteString("A\n")
+	assert.Nil(t, err)
+	_, err = file.WriteString("Time\n")
+	assert.Nil(t, err)
+
+	tailer = scanner.tailers[path]
+	msg = <-tailer.outputChan
+	assert.Equal(t, "A", string(msg.Content))
+	msg = <-tailer.outputChan
+	assert.Equal(t, "Time", string(msg.Content))
+
+	assert.Equal(t, source.Config.TailingMode, "end")
+}
+
 func TestScannerScanWithTooManyFiles(t *testing.T) {
 	var err error
 	var path string
